@@ -40,7 +40,7 @@ function Home() {
 
   return (
     <Layout
-      headerActions={me?.authenticated && (
+      headerActions={me?.authType === "password" && (
         <div className="header-actions">
           <button
             type="button"
