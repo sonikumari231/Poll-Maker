@@ -89,9 +89,10 @@ function ProtectedRoute({ children }) {
 }
 
 function Login() {
+  const location = useLocation();
   const navigate = useNavigate();
   const [mode, setMode] = useState(() =>
-    new URLSearchParams(window.location.search).get("mode") === "login"
+    new URLSearchParams(location.search).get("mode") === "login"
       ? "login"
       : "register"
   );
