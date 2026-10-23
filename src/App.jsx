@@ -2,11 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, API_BASE } from "./api.js";
 
-function Layout({ children }) {
+function Layout({ children, headerActions }) {
   return (
     <div className="page">
       <header className="header">
         <Link className="brand" to="/">Poll Maker</Link>
+        {headerActions}
       </header>
       <main className="container">{children}</main>
     </div>
@@ -17,13 +18,41 @@ function Home() {
   const location = useLocation();
   const isDeepLinking = new URLSearchParams(location.search).get("deepLink") === "1";
   const [me, setMe] = useState(null);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     api.me().then(setMe).catch(() => setMe(null));
   }, []);
 
+  async function logout() {
+    setError("");
+    setLoggingOut(true);
+    try {
+      await api.logout();
+      setMe({ authenticated: false, authType: null, user: null });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoggingOut(false);
+    }
+  }
+
   return (
-    <Layout>
+    <Layout
+      headerActions={me?.authenticated && (
+        <div className="header-actions">
+          <button
+            type="button"
+            className="header-signout"
+            onClick={logout}
+            disabled={loggingOut}
+          >
+            {loggingOut ? "Signing out..." : "Sign out"}
+          </button>
+        </div>
+      )}
+    >
       <section className="hero card">
         <span className="eyebrow">MERN + LTI 1.3 MVP</span>
         <h1>Create and share polls</h1>
@@ -52,6 +81,8 @@ function Home() {
           <strong>{me?.authenticated ? "Signed in:" : "Not signed in"}</strong>{" "}
           {me?.authType === "lti" ? "through Aula/LTI" : me?.user?.email || ""}
         </div>
+
+        {error && <div className="error">{error}</div>}
 
         {me?.authType === "lti" && (
           <div className="lti-box">
@@ -101,6 +132,16 @@ function Login() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sessionUser, setSessionUser] = useState(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  useEffect(() => {
+    api.me()
+      .then((session) => setSessionUser(session.authenticated ? session.user : null))
+      .catch((requestError) => setError(requestError.message))
+      .finally(() => setCheckingSession(false));
+  }, []);
 
   async function submit(event) {
     event.preventDefault();
@@ -127,12 +168,41 @@ function Login() {
     }
   }
 
+  async function logout() {
+    setError("");
+    setNotice("");
+    setLoggingOut(true);
+    try {
+      await api.logout();
+      setSessionUser(null);
+      setNotice("You have been signed out.");
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoggingOut(false);
+    }
+  }
+
   return (
     <Layout>
       <section className="card form-card">
         <span className="eyebrow">Poll Maker</span>
         <h2>{mode === "login" ? "Sign in" : "Create an account"}</h2>
         <p className="muted">Aula users are signed in automatically after an LTI launch.</p>
+
+        {sessionUser && (
+          <div className="status">
+            <strong>Signed in:</strong> {sessionUser.email || "through Aula/LTI"}
+            <button
+              type="button"
+              className="button secondary"
+              onClick={logout}
+              disabled={loggingOut || checkingSession}
+            >
+              {loggingOut ? "Signing out..." : "Sign out"}
+            </button>
+          </div>
+        )}
 
         <form onSubmit={submit}>
           <label>Email</label>
@@ -257,7 +327,9 @@ function Poll() {
   const [poll, setPoll] = useState(null);
   const [selected, setSelected] = useState("");
   const [message, setMessage] = useState("");
+  const [voteError, setVoteError] = useState("");
   const [error, setError] = useState("");
+  const [submittingVote, setSubmittingVote] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
   const shareInputRef = useRef(null);
 
@@ -274,17 +346,28 @@ function Poll() {
   }, [id]);
 
   async function submitVote() {
+    if (poll.hasVoted || submittingVote) {
+      return;
+    }
     if (!selected) {
       setMessage("Please select an option.");
       return;
     }
 
+    setMessage("");
+    setVoteError("");
+    setSubmittingVote(true);
     try {
       const updated = await api.vote(id, selected);
-      setPoll(updated);
+      setPoll({ ...updated, hasVoted: true });
       setMessage("Vote recorded!");
     } catch (e) {
-      setError(e.message);
+      setVoteError(e.message);
+      if (e.message === "You have already voted in this poll.") {
+        await load();
+      }
+    } finally {
+      setSubmittingVote(false);
     }
   }
 
@@ -352,6 +435,7 @@ function Poll() {
                 name="poll"
                 value={option.id}
                 checked={selected === option.id}
+                disabled={submittingVote || poll.hasVoted}
                 onChange={(e) => setSelected(e.target.value)}
               />
               <span>{option.text}</span>
@@ -359,11 +443,16 @@ function Poll() {
           ))}
         </div>
 
-        <button className="button primary full" onClick={submitVote}>
-          Vote
+        <button
+          className="button primary full"
+          onClick={submitVote}
+          disabled={submittingVote || poll.hasVoted}
+        >
+          {poll.hasVoted ? "You have voted" : submittingVote ? "Submitting..." : "Vote"}
         </button>
 
         {message && <div className="success">{message}</div>}
+        {voteError && <div className="error">{voteError}</div>}
 
         <div className="results">
           <h3>Results</h3>
