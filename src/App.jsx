@@ -54,7 +54,6 @@ function Home() {
       )}
     >
       <section className="hero card">
-        <span className="eyebrow">MERN + LTI 1.3 MVP</span>
         <h1>Create and share polls</h1>
         <p>
           Create a question, generate a shareable link, let people vote,
